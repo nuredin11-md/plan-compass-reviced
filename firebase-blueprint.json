@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "The user profile and access details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique user identifier" },
+        "email": { "type": "string", "description": "User principal email address" },
+        "displayName": { "type": "string", "description": "Full name display string" },
+        "role": { "type": "string", "description": "Security access role within the app" },
+        "region": { "type": "string", "description": "Administrative region location context" },
+        "facility": { "type": "string", "description": "Assigned medical facility" },
+        "department": { "type": "string", "description": "Associated clinical department" }
+      },
+      "required": ["id", "email", "displayName", "role"]
+    },
+    "Indicator": {
+      "title": "Indicator",
+      "description": "A single performance indicator inside the master plan",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Unique indicator reference code" },
+        "category": { "type": "string", "description": "Program thematic sub-category" },
+        "name": { "type": "string", "description": "Full display name statement" },
+        "unit": { "type": "string", "description": "Measurement unit e.g. % or count" },
+        "baseline2015": { "type": "number", "description": "Year 2015 performance baseline value" },
+        "target2016": { "type": "number", "description": "Year 2016 planning objective target" },
+        "department": { "type": "string", "description": "Owning hospital department" }
+      },
+      "required": ["code", "category", "name", "unit", "baseline2015", "target2016", "department"]
+    },
+    "MonthlyEntry": {
+      "title": "MonthlyEntry",
+      "description": "The performance metric submitted for a specific month and indicator",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Reference code of the indicator" },
+        "month": { "type": "string", "description": "Ethiopian calendar month name" },
+        "actual": { "type": "number", "description": "Reported percentage/count result on indicator" },
+        "remarks": { "type": "string", "description": "Contextual remarks, notes or explanations" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "ISO timestamp of database writing" }
+      },
+      "required": ["code", "month", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Audit record of any critical database modification or context action",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique auto-generated log index" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "ISO entry timestamp" },
+        "userId": { "type": "string", "description": "Account creator identification" },
+        "userEmail": { "type": "string", "description": "Account creator email address" },
+        "action": { "type": "string", "description": "Type of event audited" },
+        "resource": { "type": "string", "description": "The target identifier affected" },
+        "details": { "type": "string", "description": "Comprehensive visual narrative of event details" },
+        "role": { "type": "string", "description": "Role profile authorizing the modification" }
+      },
+      "required": ["id", "timestamp", "userId", "userEmail", "action", "resource", "details", "role"]
+    }
+  },
+  "firestore": {
+    "userProfiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "Secure user details collection indexed by standard user identity"
+    },
+    "indicators/{code}": {
+      "schema": "Indicator",
+      "description": "Hospital master plan list entries indexed by custom codes"
+    },
+    "monthlyEntries/{entryId}": {
+      "schema": "MonthlyEntry",
+      "description": "Departmental monthly metric entries stored per month and indicator"
+    },
+    "auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Complete security audit log collection used to generate logs"
+    }
+  }
+}

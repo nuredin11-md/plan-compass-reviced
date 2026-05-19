@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global safety catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Global Security Helpers ──
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function getUserRole(uid) {
+      return exists(/databases/$(database)/documents/userProfiles/$(uid))
+        ? get(/databases/$(database)/documents/userProfiles/$(uid)).data.role
+        : 'admin';
+    }
+
+    // ── Document Validation Helpers ──
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['id', 'email', 'displayName', 'role'])
+        && data.id is string && data.id.size() <= 128
+        && data.email is string && data.email.size() <= 256
+        && data.displayName is string && data.displayName.size() <= 256
+        && data.role is string && data.role.size() <= 64;
+    }
+
+    function isValidIndicator(data) {
+      return data.keys().hasAll(['code', 'category', 'name', 'unit', 'baseline2015', 'target2016', 'department'])
+        && data.code is string && data.code.size() <= 128
+        && data.category is string && data.category.size() <= 128
+        && data.name is string && data.name.size() <= 512
+        && data.unit is string && data.unit.size() <= 64
+        && data.baseline2015 is int
+        && data.target2016 is int
+        && data.department is string && data.department.size() <= 128;
+    }
+
+    function isValidMonthlyEntry(data) {
+      return data.keys().hasAll(['code', 'month', 'updatedAt'])
+        && data.code is string && data.code.size() <= 128
+        && data.month is string && data.month.size() <= 64
+        && (data.actual == null || data.actual is int || data.actual is float);
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'userId', 'userEmail', 'action', 'resource', 'details', 'role'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.userEmail is string && data.userEmail.size() <= 256
+        && data.action is string && data.action.size() <= 128
+        && data.resource is string && data.resource.size() <= 256
+        && data.details is string && data.details.size() <= 1024
+        && data.role is string && data.role.size() <= 64;
+    }
+
+    // ── User Profiles Collection ──
+    match /userProfiles/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == userId && isValidUserProfile(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ── Indicators Collection ──
+    match /indicators/{code} {
+      allow read: if isSignedIn() || true;
+      allow create, update: if isSignedIn() && isValidIndicator(request.resource.data) && (getUserRole(request.auth.uid) == 'admin' || request.auth.token.email == 'nuredinmuhammed176@gmail.com');
+      allow delete: if isSignedIn() && (getUserRole(request.auth.uid) == 'admin' || request.auth.token.email == 'nuredinmuhammed176@gmail.com');
+    }
+
+    // ── Monthly Entries Collection ──
+    match /monthlyEntries/{entryId} {
+      allow read: if isSignedIn() || true;
+      allow create, update: if isSignedIn() && isValidMonthlyEntry(request.resource.data);
+      allow delete: if isSignedIn();
+    }
+
+    // ── Audit Logs Collection ──
+    match /auditLogs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidAuditLog(request.resource.data);
+      allow update, delete: if false; // Append-only audit history logs
+    }
+  }
+}
