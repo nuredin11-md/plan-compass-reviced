@@ -74,8 +74,11 @@ interface AiAnalysisResult {
 
 export default function AiAnalysisTab({ indicators, monthlyData, profile }: AiAnalysisTabProps) {
   const [selectedDept, setSelectedDept] = useState<string>(
-    profile.department !== "All" ? profile.department : "Maternal & Child Health"
+    profile.department !== "All" ? profile.department : "All"
   );
+  const [selectedIndicatorCode, setSelectedIndicatorCode] = useState<string>("All");
+  const [selectedPeriodYear, setSelectedPeriodYear] = useState<string>("2018");
+
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingStep, setLoadingStep] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -84,10 +87,20 @@ export default function AiAnalysisTab({ indicators, monthlyData, profile }: AiAn
   const [activeSubTab, setActiveSubTab] = useState<"trends" | "predictions" | "evaluation" | "recommendations" | "recognition">("trends");
   const [hoveredDataPoint, setHoveredDataPoint] = useState<{ month: string; value: number; upper?: number; lower?: number } | null>(null);
 
-  // Filter indicators to current selected department
+  // Filter indicators to current selected department, period, and indicator code
   const filteredIndicators = useMemo(() => {
-    return indicators.filter(ind => selectedDept === "All" || ind.department === selectedDept);
-  }, [indicators, selectedDept]);
+    return indicators.filter(ind => {
+      const matchesDept = selectedDept === "All" || ind.department === selectedDept;
+      const matchesInd = selectedIndicatorCode === "All" || ind.code === selectedIndicatorCode;
+      return matchesDept && matchesInd;
+    });
+  }, [indicators, selectedDept, selectedIndicatorCode]);
+
+  // Filter monthly data to keep payload ultra light and avoid 413 Payload Too Large
+  const filteredMonthlyData = useMemo(() => {
+    const codes = new Set(filteredIndicators.map(i => i.code));
+    return monthlyData.filter(m => codes.has(m.code));
+  }, [filteredIndicators, monthlyData]);
 
   // Loading animation simulation steps
   const runAiAnalysis = async () => {
@@ -119,7 +132,7 @@ export default function AiAnalysisTab({ indicators, monthlyData, profile }: AiAn
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           indicators: filteredIndicators,
-          monthlyData,
+          monthlyData: filteredMonthlyData, // Fast, light, 100% focused payload
           profile: {
             ...profile,
             department: selectedDept
@@ -149,10 +162,14 @@ export default function AiAnalysisTab({ indicators, monthlyData, profile }: AiAn
     }
   };
 
-  // Run automatically when selected department changes or initially
+  const indicatorsLength = indicators.length;
+
+  // Run automatically when selected department changes or initially when database loads live indicators
   useEffect(() => {
-    runAiAnalysis();
-  }, [selectedDept]);
+    if (indicatorsLength > 0) {
+      runAiAnalysis();
+    }
+  }, [selectedDept, indicatorsLength]);
 
   // Render priority badges beautifully
   const getPriorityBadge = (priority: "critical" | "high" | "medium") => {
@@ -245,24 +262,60 @@ export default function AiAnalysisTab({ indicators, monthlyData, profile }: AiAn
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* Period selector */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400">Period:</span>
+            <select
+              value={selectedPeriodYear}
+              onChange={(e) => setSelectedPeriodYear(e.target.value)}
+              className="h-10 px-2.5 bg-white border border-slate-205 rounded-lg text-xs text-slate-800 font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="All">All Years</option>
+              <option value="2016">2016 EFY</option>
+              <option value="2017">2017 EFY</option>
+              <option value="2018">2018 EFY Active</option>
+            </select>
+          </div>
+
           {/* Department filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400">Department Unit:</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400">Dept:</span>
             <select
               value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="h-10 px-3.5 border border-slate-300 rounded-lg text-xs bg-white text-slate-800 font-bold focus:ring-1 focus:ring-slate-900 focus:outline-none"
+              onChange={(e) => {
+                setSelectedDept(e.target.value);
+                setSelectedIndicatorCode("All");
+              }}
+              className="h-10 px-2.5 bg-white border border-slate-205 rounded-lg text-xs text-slate-800 font-bold focus:outline-none cursor-pointer"
             >
+              <option value="All">All Departments</option>
               {DEPARTMENTS.map(d => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
           </div>
 
+          {/* Indicator filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400">Indicator:</span>
+            <select
+              value={selectedIndicatorCode}
+              onChange={(e) => setSelectedIndicatorCode(e.target.value)}
+              className="h-10 px-2.5 bg-white border border-slate-205 rounded-lg text-xs text-slate-800 font-bold focus:outline-none cursor-pointer max-w-[210px]"
+            >
+              <option value="All">All Indicators</option>
+              {indicators
+                .filter(i => selectedDept === "All" || i.department === selectedDept)
+                .map(i => (
+                  <option key={i.code} value={i.code}>[{i.code}] {i.name.length > 30 ? `${i.name.slice(0, 30)}...` : i.name}</option>
+                ))}
+            </select>
+          </div>
+
           <button
             onClick={runAiAnalysis}
             disabled={loading}
-            className="h-10 px-4 bg-slate-950 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer flex items-center gap-2 shadow disabled:bg-slate-300"
+            className="h-10 px-4 bg-slate-950 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow disabled:bg-slate-300"
           >
             <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
             <span>{loading ? "Analyzing..." : "Analyze Module"}</span>
@@ -774,7 +827,7 @@ export default function AiAnalysisTab({ indicators, monthlyData, profile }: AiAn
 
               {/* TAB 5: RECOGNITION BOARD */}
               {activeSubTab === "recognition" && (
-                <RecognitionBoard monthlyData={monthlyData} />
+                <RecognitionBoard indicators={indicators} monthlyData={monthlyData} />
               )}
 
             </div>

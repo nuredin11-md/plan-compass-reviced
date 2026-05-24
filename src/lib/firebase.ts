@@ -6,8 +6,8 @@ import firebaseConfig from "../../firebase-applet-config.json";
 // Initialize official Firebase SDK with parameters provisioned dynamically
 const app = initializeApp(firebaseConfig);
 
-// Initialize Cloud Firestore and associate with the primary databaseId matching the configuration
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Initialize Cloud Firestore
+export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 // Operational types in compliance with error management rules

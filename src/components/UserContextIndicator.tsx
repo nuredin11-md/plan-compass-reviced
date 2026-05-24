@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { UserProfile, UserRole } from "../types";
 import { localDb, isSupabaseConfigured } from "../lib/supabaseClient";
-import { INITIAL_FACILITIES, INITIAL_REGIONS, DEPARTMENTS } from "../data/initialData";
+import { INITIAL_REGIONS, DEPARTMENTS } from "../data/initialData";
 import { Shield, Building, Globe, Layers, ChevronDown, Check, Info } from "lucide-react";
 
 interface UserContextIndicatorProps {
@@ -170,18 +170,16 @@ export default function UserContextIndicator({ profile, onProfileChange }: UserC
                 </select>
               </div>
 
-              {/* Facility Selection */}
+              {/* Facility Input */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Active Facility Context</label>
-                <select
+                <input
+                  type="text"
                   value={facility}
                   onChange={(e) => setFacility(e.target.value)}
-                  className="w-full h-[38px] px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none bg-slate-50 text-slate-800 font-medium"
-                >
-                  {INITIAL_FACILITIES.map((f) => (
-                    <option key={f.id} value={f.name}>{f.name} ({f.type})</option>
-                  ))}
-                </select>
+                  placeholder="Type/Enter Hospital or Health Center name..."
+                  className="w-full h-[38px] px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50 text-slate-800 font-medium"
+                />
               </div>
 
               {/* Department Selection */}

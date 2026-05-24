@@ -17,9 +17,7 @@ service cloud.firestore {
     }
 
     function getUserRole(uid) {
-      return exists(/databases/$(database)/documents/userProfiles/$(uid))
-        ? get(/databases/$(database)/documents/userProfiles/$(uid)).data.role
-        : 'admin';
+      return get(/databases/$(database)/documents/userProfiles/$(uid)).data.role;
     }
 
     // ── Document Validation Helpers ──
@@ -37,8 +35,8 @@ service cloud.firestore {
         && data.category is string && data.category.size() <= 128
         && data.name is string && data.name.size() <= 512
         && data.unit is string && data.unit.size() <= 64
-        && data.baseline2015 is int
-        && data.target2016 is int
+        && (data.baseline2015 is int || data.baseline2015 is float)
+        && (data.target2016 is int || data.target2016 is float)
         && data.department is string && data.department.size() <= 128;
     }
 
@@ -46,7 +44,7 @@ service cloud.firestore {
       return data.keys().hasAll(['code', 'month', 'updatedAt'])
         && data.code is string && data.code.size() <= 128
         && data.month is string && data.month.size() <= 64
-        && (data.actual == null || data.actual is int || data.actual is float);
+        && (data.get('actual', null) == null || data.actual is int || data.actual is float);
     }
 
     function isValidAuditLog(data) {
@@ -70,8 +68,8 @@ service cloud.firestore {
     // ── Indicators Collection ──
     match /indicators/{code} {
       allow read: if isSignedIn() || true;
-      allow create, update: if isSignedIn() && isValidIndicator(request.resource.data) && (getUserRole(request.auth.uid) == 'admin' || request.auth.token.email == 'nuredinmuhammed176@gmail.com');
-      allow delete: if isSignedIn() && (getUserRole(request.auth.uid) == 'admin' || request.auth.token.email == 'nuredinmuhammed176@gmail.com');
+      allow create, update: if isSignedIn() && isValidIndicator(request.resource.data) && (!exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) || getUserRole(request.auth.uid) == 'admin' || request.auth.token.email == 'nuredinmuhammed176@gmail.com');
+      allow delete: if isSignedIn() && (!exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) || getUserRole(request.auth.uid) == 'admin' || request.auth.token.email == 'nuredinmuhammed176@gmail.com');
     }
 
     // ── Monthly Entries Collection ──

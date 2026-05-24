@@ -9,7 +9,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Initialize Gemini SDK with telemetry header
 const getGeminiClient = () => {
@@ -37,6 +38,59 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Expose a secure proxy endpoint for Google Workspace APIs to bypass iframe CORS constraints
+app.post("/api/workspace/proxy", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ error: "Missing authorization header for Google Workspace Proxy." });
+    }
+
+    const { url, method, body, headers: customHeaders } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: "Missing destination URL to proxy." });
+    }
+
+    // Secure proxy constraints: limit to allowed Google Workspace API subdomains
+    if (
+      !url.startsWith("https://tasks.googleapis.com/") &&
+      !url.startsWith("https://sheets.googleapis.com/") &&
+      !url.startsWith("https://slides.googleapis.com/")
+    ) {
+      return res.status(400).json({ error: "Permission denied for proxy destination URL." });
+    }
+
+    const fetchOptions: any = {
+      method: method || "GET",
+      headers: {
+        "Authorization": authHeader,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        ...customHeaders
+      }
+    };
+
+    if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
+      fetchOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+    }
+
+    const googleRes = await fetch(url, fetchOptions);
+    
+    const contentType = googleRes.headers.get("content-type");
+    let responseData;
+    if (contentType && contentType.includes("application/json")) {
+      responseData = await googleRes.json();
+    } else {
+      responseData = { text: await googleRes.text() };
+    }
+
+    res.status(googleRes.status).json(responseData);
+  } catch (error: any) {
+    console.error("Workspace API Proxy error:", error);
+    res.status(500).json({ error: error?.message || "Failed to route Workspace request through backend proxy." });
+  }
+});
+
 // Expose AI Analysis endpoint
 app.post("/api/ai/analyze", async (req, res) => {
   try {
@@ -61,12 +115,12 @@ app.post("/api/ai/analyze", async (req, res) => {
     // Build targeted detailed prompt for Gemini
     const systemPrompt = `You are Plan Compass's senior health systems data scientist and medical performance evaluator.
 Your goal is to perform:
-1. Trend Analysis: Identify patient inflow trends, clinical resource utilization, vaccine campaigns, disease outbreaks or diagnostic shifts based on historical actuals.
+1. Trend Analysis: Identify patient inflow trends, clinical resource utilization, vaccine campaigns, disease outbreaks or diagnostic shifts based on historical actuals (using EFY 2016 and 2017 as past performance for comparisons).
 2. Predictive Modeling: Generate monthly forecasts for the next 4 months. Predict bed occupancy bottlenecks (expressed as percentage), staffing adequacy, and critical medical supply gap evaluations.
-3. KPI & Strategic Evaluation: Measure current achievements against baseline (2015) and target (2016) values, setting clinical status and remedial recovery instructions.
+3. KPI & Strategic Evaluation: Measure achievements of EFY 2018 against its corresponding baseline (EFY 2017 performance) and plan target (EFY 2018 plan), setting clinical status and remedial recovery instructions. Formulate how the full EFY 2018 performance applies as a baseline for the EFY 2019 plan.
 4. Actionable Strategic Recommendations: Formulate a list of high-priority clinical directives, assigning clear timelines, priority tiers, and required inputs.
 
-Analyze the data with extreme mathematical consistency. Do not hallucinate numbers from nowhere; respect the baselines and targets of the indicators. Calculate real aggregate rates where possible from the provided data. Remember that months follow the Ethiopian Calendar order: Hamle, Nehase, Meskerem, Tikimt, Hidar, Tahsas, Tirr, Yekatit, Megabit, Miazia, Ginbot, Sene.`;
+Analyze the data with extreme mathematical consistency. Do not hallucinate numbers; respect the multi-year baseline progression: 2017 performance is the baseline for the 2018 plan, and the full 2018 performance is the baseline for the 2019 plan. Calculate real aggregate rates where possible from the provided data. Remember that months follow the Ethiopian Calendar order: Hamle, Nehase, Meskerem, Tikimt, Hidar, Tahsas, Tirr, Yekatit, Megabit, Miazia, Ginbot, Sene.`;
 
     const userPrompt = `Perform analysis for the department: "${profile.department}" in facility: "${profile.facility}", located in "${profile.region}".
     
@@ -81,118 +135,129 @@ ${JSON.stringify(profile, null, 2)}
 
 Please provide the output directly structured into JSON matching the requested schema.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: userPrompt,
-      config: {
-        systemInstruction: systemPrompt,
-        temperature: 0.1, // low temperature for analytical accuracy
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["trendAnalysis", "predictiveModeling", "kpiEvaluation", "overallRecommendations"],
-          properties: {
-            trendAnalysis: {
-              type: Type.OBJECT,
-              required: ["summary", "insights"],
-              properties: {
-                summary: { type: Type.STRING, description: "A high-level executive summary of historical data patterns, patient inflow fluctuations, and anomalies." },
-                insights: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    required: ["title", "description", "indicatorCode", "trendDirection"],
-                    properties: {
-                      title: { type: Type.STRING, description: "Short descriptive title of the insight." },
-                      description: { type: Type.STRING, description: "Detailed clinical description and possible structural causes (e.g., vaccine supply chain delays, rainy season outbreaks)." },
-                      indicatorCode: { type: Type.STRING, description: "Relevant indicator code or 'ALL'." },
-                      trendDirection: { type: Type.STRING, enum: ["increasing", "decreasing", "stable", "fluctuating"] }
-                    }
-                  }
-                }
-              }
-            },
-            predictiveModeling: {
-              type: Type.OBJECT,
-              required: ["summary", "predictions"],
-              properties: {
-                summary: { type: Type.STRING, description: "Executive summary explaining forecasted workload, staffing risks, and resource gaps for the upcoming months." },
-                predictions: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    required: ["indicatorCode", "indicatorName", "forecastedMonths", "staffingNeedScore", "bedOccupancyForecast", "resourceGapAnalysis"],
-                    properties: {
-                      indicatorCode: { type: Type.STRING, description: "Relevant indicator code" },
-                      indicatorName: { type: Type.STRING, description: "Human descriptive name of the indicator" },
-                      forecastedMonths: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          required: ["month", "value", "confidenceIntervalLower", "confidenceIntervalUpper"],
-                          properties: {
-                            month: { type: Type.STRING, description: "The name of the forecasted month, e.g. Tikimt, Hidar, Tahsas, Tirr" },
-                            value: { type: Type.NUMBER, description: "The projected value for this month based on trend modeling" },
-                            confidenceIntervalLower: { type: Type.NUMBER },
-                            confidenceIntervalUpper: { type: Type.NUMBER }
-                          }
-                        }
-                      },
-                      staffingNeedScore: { type: Type.STRING, enum: ["adequate", "warning_shortage", "critical_shortage"] },
-                      bedOccupancyForecast: { type: Type.NUMBER, description: "Predicted bed occupancy percentage for the department, e.g., 85" },
-                      resourceGapAnalysis: { type: Type.STRING, description: "Details of predicted equipment, bed, or pharmaceutical shortfalls" }
-                    }
-                  }
-                }
-              }
-            },
-            kpiEvaluation: {
-              type: Type.OBJECT,
-              required: ["summary", "evaluations"],
-              properties: {
-                summary: { type: Type.STRING, description: "Comparative overview of performance achievements relative to 2015 national baselines and 2016 targets." },
-                evaluations: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    required: ["indicatorCode", "name", "baseline", "target", "currentActual", "achievementPercentage", "kpiStatus", "remedialGuidance"],
-                    properties: {
-                      indicatorCode: { type: Type.STRING },
-                      name: { type: Type.STRING },
-                      baseline: { type: Type.NUMBER },
-                      target: { type: Type.NUMBER },
-                      currentActual: { type: Type.NUMBER },
-                      achievementPercentage: { type: Type.NUMBER, description: "Calculated progress score relative to target" },
-                      kpiStatus: { type: Type.STRING, enum: ["exceeded", "on_track", "off_track", "critical"] },
-                      remedialGuidance: { type: Type.STRING, description: "Actionable strategic directive to rescue performance" }
-                    }
-                  }
-                }
-              }
-            },
-            overallRecommendations: {
-              type: Type.ARRAY,
-              items: {
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.1, // low temperature for analytical accuracy
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            required: ["trendAnalysis", "predictiveModeling", "kpiEvaluation", "overallRecommendations"],
+            properties: {
+              trendAnalysis: {
                 type: Type.OBJECT,
-                required: ["title", "actionSteps", "priority", "timeline", "estimatedImpact"],
+                required: ["summary", "insights"],
                 properties: {
-                  title: { type: Type.STRING, description: "Core recommendation title" },
-                  actionSteps: {
+                  summary: { type: Type.STRING, description: "A high-level executive summary of historical data patterns, patient inflow fluctuations, and anomalies." },
+                  insights: {
                     type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                  },
-                  priority: { type: Type.STRING, enum: ["critical", "high", "medium"] },
-                  timeline: { type: Type.STRING, description: "Expected timeline, e.g. Immediate (2 weeks), Short-term (1 month), etc." },
-                  estimatedImpact: { type: Type.STRING, description: "Description of potential performance uplift" }
+                    items: {
+                      type: Type.OBJECT,
+                      required: ["title", "description", "indicatorCode", "trendDirection"],
+                      properties: {
+                        title: { type: Type.STRING, description: "Short descriptive title of the insight." },
+                        description: { type: Type.STRING, description: "Detailed clinical description and possible structural causes (e.g., vaccine supply chain delays, rainy season outbreaks)." },
+                        indicatorCode: { type: Type.STRING, description: "Relevant indicator code or 'ALL'." },
+                        trendDirection: { type: Type.STRING, enum: ["increasing", "decreasing", "stable", "fluctuating"] }
+                      }
+                    }
+                  }
+                }
+              },
+              predictiveModeling: {
+                type: Type.OBJECT,
+                required: ["summary", "predictions"],
+                properties: {
+                  summary: { type: Type.STRING, description: "Executive summary explaining forecasted workload, staffing risks, and resource gaps for the upcoming months." },
+                  predictions: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      required: ["indicatorCode", "indicatorName", "forecastedMonths", "staffingNeedScore", "bedOccupancyForecast", "resourceGapAnalysis"],
+                      properties: {
+                        indicatorCode: { type: Type.STRING, description: "Relevant indicator code" },
+                        indicatorName: { type: Type.STRING, description: "Human descriptive name of the indicator" },
+                        forecastedMonths: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            required: ["month", "value", "confidenceIntervalLower", "confidenceIntervalUpper"],
+                            properties: {
+                              month: { type: Type.STRING, description: "The name of the forecasted month, e.g. Tikimt, Hidar, Tahsas, Tirr" },
+                              value: { type: Type.NUMBER, description: "The projected value for this month based on trend modeling" },
+                              confidenceIntervalLower: { type: Type.NUMBER },
+                              confidenceIntervalUpper: { type: Type.NUMBER }
+                            }
+                          }
+                        },
+                        staffingNeedScore: { type: Type.STRING, enum: ["adequate", "warning_shortage", "critical_shortage"] },
+                        bedOccupancyForecast: { type: Type.NUMBER, description: "Predicted bed occupancy percentage for the department, e.g., 85" },
+                        resourceGapAnalysis: { type: Type.STRING, description: "Details of predicted equipment, bed, or pharmaceutical shortfalls" }
+                      }
+                    }
+                  }
+                }
+              },
+              kpiEvaluation: {
+                type: Type.OBJECT,
+                required: ["summary", "evaluations"],
+                properties: {
+                  summary: { type: Type.STRING, description: "Comparative overview of performance achievements of EFY 2018 relative to the EFY 2017 baselines and EFY 2018 targets." },
+                  evaluations: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      required: ["indicatorCode", "name", "baseline", "target", "currentActual", "achievementPercentage", "kpiStatus", "remedialGuidance"],
+                      properties: {
+                        indicatorCode: { type: Type.STRING },
+                        name: { type: Type.STRING },
+                        baseline: { type: Type.NUMBER },
+                        target: { type: Type.NUMBER },
+                        currentActual: { type: Type.NUMBER },
+                        achievementPercentage: { type: Type.NUMBER, description: "Calculated progress score relative to target" },
+                        kpiStatus: { type: Type.STRING, enum: ["exceeded", "on_track", "off_track", "critical"] },
+                        remedialGuidance: { type: Type.STRING, description: "Actionable strategic directive to rescue performance" }
+                      }
+                    }
+                  }
+                }
+              },
+              overallRecommendations: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  required: ["title", "actionSteps", "priority", "timeline", "estimatedImpact"],
+                  properties: {
+                    title: { type: Type.STRING, description: "Core recommendation title" },
+                    actionSteps: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING }
+                    },
+                    priority: { type: Type.STRING, enum: ["critical", "high", "medium"] },
+                    timeline: { type: Type.STRING, description: "Expected timeline, e.g. Immediate (2 weeks), Short-term (1 month), etc." },
+                    estimatedImpact: { type: Type.STRING, description: "Description of potential performance uplift" }
+                  }
                 }
               }
             }
           }
         }
-      }
-    });
+      });
+    } catch (genAiError: any) {
+      console.warn("AI Analysis: Gemini call ran into quota or billing issues (e.g., 429 RESOURCE_EXHAUSTED). Gracefully falling back to local forecasting engine.", genAiError);
+      const mockResult = generateMockAiData(indicators, monthlyData, profile);
+      return res.json({
+        success: true,
+        source: "mock_engine",
+        data: mockResult
+      });
+    }
 
-    const parsedData = JSON.parse(response.text || "{}");
+    const parsedData = JSON.parse(response?.text || "{}");
     return res.json({
       success: true,
       source: "gemini_copilot",
@@ -200,7 +265,7 @@ Please provide the output directly structured into JSON matching the requested s
     });
 
   } catch (error: any) {
-    console.error("AI Analysis error:", error);
+    console.error("AI Analysis outer error:", error);
     res.status(500).json({ error: error?.message || "Internal server error occurred during AI analysis." });
   }
 });
@@ -232,19 +297,19 @@ function generateMockAiData(indicators: any[], monthlyData: any[], profile: any)
   });
 
   const predictions = activeIndicators.map((ind, idx) => {
-    // Forecast trend progression
-    const baseline = ind.baseline2015;
-    const target = ind.target2016;
+    // Forecast trend progression using 2017 performance as baseline and 2018 plan as target
+    const baseline = ind.perf2017 || 10;
+    const target = ind.plan2018 || 12;
     const slope = (target - baseline) * 0.08;
 
     const forecastedMonths = mockForecastingMonths.map((m, mIdx) => {
       const scaleValue = Math.round(baseline + (slope * (mIdx + 4)) + (Math.sin(mIdx + idx) * 3));
-      const value = Math.max(1, Math.min(100, scaleValue));
+      const value = Math.max(1, scaleValue);
       return {
         month: m,
         value,
         confidenceIntervalLower: Math.max(0, value - 5),
-        confidenceIntervalUpper: Math.min(100, value + 6)
+        confidenceIntervalUpper: value + 6
       };
     });
 
@@ -258,27 +323,24 @@ function generateMockAiData(indicators: any[], monthlyData: any[], profile: any)
       staffingNeedScore: isShortage ? "warning_shortage" : isAdequate ? "adequate" : "critical_shortage",
       bedOccupancyForecast: Math.min(95, Math.max(40, 65 + (idx * 9) + (Math.sin(idx) * 5))),
       resourceGapAnalysis: ind.code.includes("NCD") 
-        ? "Severe: Current outpatient load threatens to deplete local diuretic stock byTahsas unless reorder triggers are compressed."
+        ? "Severe: Current outpatient load threatens to deplete local diuretic stock by Tahsas unless reorder triggers are compressed."
         : "Standard: Bed ratio and specialized pediatric resources remain capable of buffer load absorbing for next quarter."
     };
   });
 
   const evaluations = activeIndicators.map((ind, idx) => {
-    const actualReports = monthlyData.filter(e => e.code === ind.code && e.actual !== null);
-    const sum = actualReports.reduce((acc, curr) => acc + (curr.actual || 0), 0);
-    const currentActual = actualReports.length > 0 ? Math.round(sum / actualReports.length) : Math.round((ind.baseline2015 + ind.target2016) / 2);
-    
-    const target = ind.target2016;
+    const currentActual = ind.perf2018 !== null ? ind.perf2018 : Math.round((ind.perf2017 + ind.plan2018) / 2);
+    const target = ind.plan2018 || 1;
     const pct = Math.round((currentActual / target) * 100);
     
     let kpiStatus = "on_track";
     let remedial = "Continue routine supervising visit validation logs.";
     if (pct < 60) {
       kpiStatus = "critical";
-      remedial = `URGENT: Re-allocate mobile outreach vehicle fuels to prioritize ${ind.name} clinical services in remote kebeles immediately.`;
+      remedial = `URGENT: Re-allocate mobile outreach vehicle fuels to prioritize ${ind.name} clinical services in remote locations immediately.`;
     } else if (pct < 85) {
       kpiStatus = "off_track";
-      remedial = "Review clinical guidelines and double midwife schedules during high-tide delivery patterns.";
+      remedial = `Review clinical guidelines and monitor service output regularly for ${ind.name}.`;
     } else if (pct >= 100) {
       kpiStatus = "exceeded";
       remedial = "Document best practices for sharing with auxiliary sister health institutions in the administrative cluster.";
@@ -287,7 +349,7 @@ function generateMockAiData(indicators: any[], monthlyData: any[], profile: any)
     return {
       indicatorCode: ind.code,
       name: ind.name,
-      baseline: ind.baseline2015,
+      baseline: ind.perf2017,
       target,
       currentActual,
       achievementPercentage: pct,

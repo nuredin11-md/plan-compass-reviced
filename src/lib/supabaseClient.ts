@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { Indicator, MonthlyEntry, AuditLog, UserProfile, UserRole } from "../types";
-import { INITIAL_INDICATORS, INITIAL_FACILITIES, INITIAL_REGIONS, generateSampleData } from "../data/initialData";
+import { INITIAL_INDICATORS, generateSampleData } from "../data/initialData";
 
 // Keep supabase definition to prevent any other compilation errors
 const SUPABASE_URL = ((import.meta as any).env.VITE_SUPABASE_URL as string) || "";
@@ -47,7 +47,7 @@ class LocalPlanCompassDb {
       displayName: "Nuredin Muhammed",
       role: "admin", // starts as admin to facilitate full testing by the user
       region: "Amhara Region",
-      facility: "Addis Alem Referral Hospital",
+      facility: "",
       department: "Maternal & Child Health"
     };
     return this.getStorage<UserProfile>("active_profile", defaultProfile);
@@ -76,7 +76,12 @@ class LocalPlanCompassDb {
 
   // Master Plan Indicators (CRUD)
   getIndicators(): Indicator[] {
-    return this.getStorage<Indicator[]>("indicators", INITIAL_INDICATORS);
+    const list = this.getStorage<Indicator[]>("indicators", INITIAL_INDICATORS);
+    if (!list || list.length < 150) {
+      this.setStorage<Indicator[]>("indicators", INITIAL_INDICATORS);
+      return INITIAL_INDICATORS;
+    }
+    return list;
   }
 
   saveIndicator(indicator: Indicator): boolean {
@@ -142,7 +147,13 @@ class LocalPlanCompassDb {
 
   // Monthly entries (actual results)
   getMonthlyEntries(): MonthlyEntry[] {
-    return this.getStorage<MonthlyEntry[]>("monthly_entries", generateSampleData());
+    const defaultData = generateSampleData();
+    const list = this.getStorage<MonthlyEntry[]>("monthly_entries", defaultData);
+    if (!list || list.length < 500) {
+      this.setStorage<MonthlyEntry[]>("monthly_entries", defaultData);
+      return defaultData;
+    }
+    return list;
   }
 
   saveMonthlyEntry(entry: MonthlyEntry): void {

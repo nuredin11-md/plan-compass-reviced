@@ -32,6 +32,14 @@ export interface Indicator {
   baseline2015: number;
   target2016: number;
   department: string;
+  
+  // Real three-years data fields
+  perf2016: number;
+  perf2017: number; // Used as the baseline for the 2018 plan
+  plan2018: number; // The active plan target for 2018
+  perf2018: number; // Used as the baseline for the 2019 plan
+  eap2018: number;  // 2018 Estimated Annual Performance
+  plan2019: number; // The plan target for 2019
 }
 
 export interface MonthlyEntry {

@@ -313,17 +313,23 @@ export default function MonthlyDataTab({ indicators, monthlyData, onMonthlyDataC
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-200">
+                <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-200">
                   <div>
-                    <span className="text-xs text-slate-500 block">Baseline (Y2015)</span>
-                    <span className="text-lg font-extrabold text-slate-700 font-mono">
-                      {activeIndicator.baseline2015} {activeIndicator.unit}
+                    <span className="text-[10px] text-slate-500 block uppercase font-mono tracking-wider">Baseline (2017)</span>
+                    <span className="text-sm font-extrabold text-slate-700 font-mono">
+                      {activeIndicator.perf2017} {activeIndicator.unit}
                     </span>
                   </div>
                   <div>
-                    <span className="text-xs text-slate-500 block">Target Goal (Y2016)</span>
-                    <span className="text-lg font-extrabold text-indigo-700 font-mono">
-                      {activeIndicator.target2016} {activeIndicator.unit}
+                    <span className="text-[10px] text-slate-500 block uppercase font-mono tracking-wider">Plan (2018)</span>
+                    <span className="text-sm font-extrabold text-indigo-700 font-mono">
+                      {activeIndicator.plan2018} {activeIndicator.unit}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block uppercase font-mono tracking-wider">Monthly Goal</span>
+                    <span className="text-sm font-extrabold text-emerald-700 font-mono">
+                      {Math.round(activeIndicator.plan2018 / 12)} {activeIndicator.unit}
                     </span>
                   </div>
                 </div>
@@ -353,15 +359,21 @@ export default function MonthlyDataTab({ indicators, monthlyData, onMonthlyDataC
                             <span className="text-lg font-extrabold text-slate-800 font-mono">
                               {activeEntry.actual} {activeIndicator.unit}
                             </span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold font-mono uppercase ${
-                              (activeEntry.actual / activeIndicator.target2016) >= 0.9
-                                ? "bg-emerald-100 text-emerald-800"
-                                : (activeEntry.actual / activeIndicator.target2016) >= 0.7
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-rose-100 text-rose-800"
-                            }`}>
-                              {Math.round((activeEntry.actual / activeIndicator.target2016) * 100)}% reached
-                            </span>
+                            {(() => {
+                              const monthlyTarget = activeIndicator.plan2018 / 12;
+                              const pct = monthlyTarget > 0 ? Math.round((activeEntry.actual / monthlyTarget) * 100) : 0;
+                              return (
+                                <span className={`text-[10px] px-2 py-0.5 rounded font-bold font-mono uppercase ${
+                                  pct >= 90
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : pct >= 70
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-rose-100 text-rose-800"
+                                }`}>
+                                  {pct}% of monthly goal reached
+                                </span>
+                              );
+                            })()}
                           </div>
                           {activeEntry.remarks && (
                             <p className="text-[11px] text-slate-500 leading-normal italic font-medium bg-slate-50 p-1.5 rounded">

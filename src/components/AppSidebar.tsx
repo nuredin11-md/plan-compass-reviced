@@ -4,6 +4,7 @@ import {
   ClipboardList,
   CalendarDays,
   Upload,
+  Cloud,
   
   GitCompareArrows,
   MessageSquareText,
@@ -13,6 +14,7 @@ import {
   HardDrive,
   Info,
   LayoutDashboard,
+  X,
 } from "lucide-react";
 import {
   Sidebar,
@@ -28,6 +30,7 @@ import {
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3, color: "text-blue-500" },
+  { id: "google", label: "Workspace Suite", icon: Cloud, color: "text-sky-500" },
   { id: "workspace", label: "Analytics Workspace", icon: LayoutDashboard, color: "text-teal-500" },
   { id: "masterplan", label: "Master Plan", icon: ClipboardList, color: "text-purple-500" },
   { id: "monthly", label: "Monthly Entry", icon: CalendarDays, color: "text-amber-500" },
@@ -42,21 +45,36 @@ const navItems = [
 interface AppSidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  onCollapse?: () => void;
 }
 
-export function AppSidebar({ activeTab, onTabChange }: AppSidebarProps) {
+export function AppSidebar({ activeTab, onTabChange, onCollapse }: AppSidebarProps) {
   return (
     <Sidebar className="border-r border-sidebar-border/50 bg-gradient-to-b from-sidebar/55 to-sidebar">
       <SidebarHeader className="p-4 border-b border-sidebar-border/30 background-gradient">
-        <div className="flex items-center gap-3 group cursor-pointer">
-          <div className="relative">
-            <Zap className="h-6 w-6 text-blue-500 animate-pulse" />
-            <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-lg group-hover:blur-xl transition-all"></div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 group cursor-pointer">
+            <div className="relative">
+              <Zap className="h-6 w-6 text-blue-500 animate-pulse" />
+              <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-lg group-hover:blur-xl transition-all"></div>
+            </div>
+            <div className="flex-1 col-span-1">
+              <h2 className="text-sm font-bold text-white tracking-wide">Hospital M&amp;E</h2>
+              <p className="text-[10px] text-slate-400 font-medium font-sans">Performance Tracker</p>
+            </div>
           </div>
-          <div className="flex-1 col-span-1">
-            <h2 className="text-sm font-bold text-white tracking-wide">Hospital M&amp;E</h2>
-            <p className="text-[10px] text-slate-400 font-medium">Performance Tracker</p>
-          </div>
+          {onCollapse && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCollapse();
+              }}
+              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors"
+              title="Collapse Sidebar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent>

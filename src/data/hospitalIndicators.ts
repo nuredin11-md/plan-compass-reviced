@@ -21,8 +21,8 @@ export const indicators = INITIAL_INDICATORS.map(ind => ({
   subProgram: ind.category,    // maps to category
   indicator: ind.name,         // maps to name
   unit: ind.unit,
-  baseline: ind.baseline2015,
-  target: ind.target2016,
+  baseline: ind.perf2017,
+  target: ind.plan2018,
   department: ind.department
 }));
 

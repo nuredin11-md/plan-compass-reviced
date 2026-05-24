@@ -43,8 +43,8 @@ export default function DhisExportTab({ indicators, monthlyData, onMonthlyDataCh
           
           // Generate realistic synced data for unsubmitted months, or overwrite
           const monthIdx = ETHIOPIAN_MONTHS.indexOf(m);
-          const baseVal = ind.baseline2015 + ((ind.target2016 - ind.baseline2015) * (monthIdx / 11));
-          const actual = Math.min(100, Math.max(0, Math.round(baseVal + (Math.sin(monthIdx) * 5))));
+          const baseVal = ind.perf2017 + ((ind.plan2018 - ind.perf2017) * (monthIdx / 11));
+          const actual = Math.max(0, Math.round(baseVal + (Math.sin(monthIdx) * (baseVal * 0.1))));
 
           const syncedEntry: MonthlyEntry = {
             code: ind.code,

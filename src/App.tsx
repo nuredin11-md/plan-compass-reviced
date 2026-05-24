@@ -17,6 +17,7 @@ import DistributionTab from "./components/DistributionTab";
 import BackupTab from "./components/BackupTab";
 import ComparisonTab from "./components/ComparisonTab";
 import AboutTab from "./components/AboutTab";
+import GoogleWorkspaceTab from "./components/GoogleWorkspaceTab";
 
 // Sidebar Component
 import { AppSidebar } from "./components/AppSidebar";
@@ -64,23 +65,30 @@ export default function App() {
         unsubscribeIndicators = onSnapshot(
           collection(db, "indicators"),
           (snapshot) => {
-            if (snapshot.empty) {
-              console.log("Empty Firestore indicators collection. Seeding INITIAL_INDICATORS in batch...");
+            const remoteList: Indicator[] = [];
+            snapshot.forEach((docSnap) => {
+              remoteList.push(docSnap.data() as Indicator);
+            });
+
+            if (snapshot.empty || remoteList.length < 150) {
+              console.log("Stale or empty Firestore indicators. Seeding 270+ real indicator master plan in chunk-batches...");
               import("./data/initialData").then(({ INITIAL_INDICATORS }) => {
-                const batch = writeBatch(db);
-                INITIAL_INDICATORS.forEach((ind) => {
-                  const docRef = doc(db, "indicators", ind.code);
-                  batch.set(docRef, ind);
-                });
-                batch.commit()
+                const chunkList = async () => {
+                  for (let i = 0; i < INITIAL_INDICATORS.length; i += 400) {
+                    const batch = writeBatch(db);
+                    const chunk = INITIAL_INDICATORS.slice(i, i + 400);
+                    chunk.forEach((ind) => {
+                      const docRef = doc(db, "indicators", ind.code);
+                      batch.set(docRef, ind);
+                    });
+                    await batch.commit();
+                  }
+                };
+                chunkList()
                   .then(() => console.log("Seeding INITIAL_INDICATORS to Cloud Firestore completed."))
                   .catch((err) => console.error("Batch seed indicators failed:", err));
               });
             } else {
-              const remoteList: Indicator[] = [];
-              snapshot.forEach((docSnap) => {
-                remoteList.push(docSnap.data() as Indicator);
-              });
               // Sync with local fallback cache & React state
               localStorage.setItem("plan_compass_indicators", JSON.stringify(remoteList));
               setIndicators(remoteList);
@@ -95,25 +103,32 @@ export default function App() {
         unsubscribeMonthlyData = onSnapshot(
           collection(db, "monthlyEntries"),
           (snapshot) => {
-            if (snapshot.empty) {
-              console.log("Empty Firestore monthlyEntries collection. Seeding sample metrics in batch...");
+            const remoteEntries: MonthlyEntry[] = [];
+            snapshot.forEach((docSnap) => {
+              remoteEntries.push(docSnap.data() as MonthlyEntry);
+            });
+
+            if (snapshot.empty || remoteEntries.length < 505) {
+              console.log("Stale or empty Firestore monthlyEntries. Seeding full 2000+ actual performance entries in chunk-batches...");
               import("./data/initialData").then(({ generateSampleData }) => {
-                const batch = writeBatch(db);
                 const samples = generateSampleData();
-                samples.forEach((entry) => {
-                  const entryId = `${entry.code}_${entry.month}`;
-                  const docRef = doc(db, "monthlyEntries", entryId);
-                  batch.set(docRef, entry);
-                });
-                batch.commit()
-                  .then(() => console.log("Seeding sample monthly data of EFY 2016 to Firestore completed."))
+                const chunkList = async () => {
+                  for (let i = 0; i < samples.length; i += 400) {
+                    const batch = writeBatch(db);
+                    const chunk = samples.slice(i, i + 400);
+                    chunk.forEach((entry) => {
+                      const entryId = `${entry.code}_${entry.month}`;
+                      const docRef = doc(db, "monthlyEntries", entryId);
+                      batch.set(docRef, entry);
+                    });
+                    await batch.commit();
+                  }
+                };
+                chunkList()
+                  .then(() => console.log("Seeding sample monthly data of 2018 EFY to Firestore completed."))
                   .catch((err) => console.error("Batch seed monthlyEntries failed:", err));
               });
             } else {
-              const remoteEntries: MonthlyEntry[] = [];
-              snapshot.forEach((docSnap) => {
-                remoteEntries.push(docSnap.data() as MonthlyEntry);
-              });
               // Sync with local fallback cache & React state
               localStorage.setItem("plan_compass_monthly_entries", JSON.stringify(remoteEntries));
               setMonthlyData(remoteEntries);
@@ -140,6 +155,9 @@ export default function App() {
   
   // Mobile responsive sidebar visibility
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+
+  // Desktop responsive sidebar visibility state
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState<boolean>(true);
 
   // Keep state synchronized
   const handleProfileChange = (newProfile: UserProfile) => {
@@ -174,17 +192,23 @@ export default function App() {
           <span className="text-xs font-bold uppercase tracking-wider font-mono">Plan Compass M&amp;E</span>
         </div>
         <div className="text-right text-[10px] font-mono text-indigo-400 font-extrabold font-semibold">
-          {profile.facility.split(' ')[0]}
+          {profile.facility ? profile.facility.split(' ')[0] : "Hospital"}
         </div>
       </div>
 
       {/* SIDEBAR NAVIGATION GRID (Responsive: Collapsible slide-in on mobile, fixed side-bar left on desktop) */}
-      <div className={`screen-only flex-none z-40 transition-all duration-300 md:block ${
+      <div className={`screen-only flex-none z-40 transition-all duration-300 ${
         sidebarOpen 
           ? "fixed inset-0 w-64 translate-x-0" 
-          : "hidden md:sticky md:top-0 md:h-screen md:w-64"
+          : desktopSidebarOpen 
+            ? "hidden md:sticky md:top-0 md:h-screen md:w-64 md:block"
+            : "hidden"
       }`}>
-        <AppSidebar activeTab={activeTab} onTabChange={handleTabChange} />
+        <AppSidebar 
+          activeTab={activeTab} 
+          onTabChange={handleTabChange} 
+          onCollapse={() => setDesktopSidebarOpen(false)}
+        />
         
         {/* Mobile backdrop shadow layer */}
         {sidebarOpen && (
@@ -202,6 +226,15 @@ export default function App() {
         <header className="hidden md:flex bg-white border-b border-slate-205/60 h-16 items-center justify-between px-6 sticky top-0 z-30 screen-only">
           
           <div className="flex items-center gap-3">
+            {/* Collapse/Expand Sidebar Toggle Button */}
+            <button
+              onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
+              className="p-1.5 mr-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm focus:outline-none"
+              title={desktopSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+
             <div className="bg-slate-900 text-white p-2 rounded-lg flex items-center justify-center shadow">
               <Compass className="h-5 w-5 text-indigo-400 rotate-45" />
             </div>
@@ -242,6 +275,14 @@ export default function App() {
           <div className="bg-transparent rounded-xl">
             {activeTab === "dashboard" && (
               <DashboardTab 
+                indicators={indicators} 
+                monthlyData={monthlyData} 
+                profile={profile}
+              />
+            )}
+
+            {activeTab === "google" && (
+              <GoogleWorkspaceTab 
                 indicators={indicators} 
                 monthlyData={monthlyData} 
                 profile={profile}
@@ -345,7 +386,7 @@ export default function App() {
               <div className="inline-block p-4 border border-slate-300 rounded font-mono text-center text-xs w-44">
                 <span className="block text-[10px] text-slate-400 font-bold uppercase">Authorized Stamp</span>
                 <div className="font-extrabold text-slate-800 py-3 text-sm border-b border-dashed border-slate-200">APPROVED</div>
-                <span className="block text-[8px] text-slate-400 font-semibold pt-1">EFY 2016 Strategic Review</span>
+                <span className="block text-[8px] text-slate-400 font-semibold pt-1">EFY 2018-2019 Strategic Review</span>
               </div>
             </div>
           </div>
@@ -356,7 +397,7 @@ export default function App() {
               I. Executive Performance Summary
             </h2>
             <p className="text-xs text-slate-700 leading-relaxed font-sans">
-              This document outlines the performance mapping and target achievements registered for active indicators inside the <strong>{profile.department !== "All" ? profile.department : "Hospital System"}</strong>. All baseline numbers represent measurements logged during the 2015 baseline cycle, with comparative actuals recorded across months of the Ethiopian fiscal year 2016 period.
+              This document outlines the performance mapping and target achievements registered for active indicators inside the <strong>{profile.department !== "All" ? profile.department : "Hospital System"}</strong>. All baseline numbers represent measurements logged during the 2017 baseline cycle, with comparative actuals and plans recorded across the Ethiopian fiscal years 2018 and 2019 period.
             </p>
           </div>
 
@@ -371,21 +412,18 @@ export default function App() {
                 <tr className="bg-slate-100 font-bold border-b border-slate-900 text-slate-800 font-mono">
                   <th className="p-2.5">Indicator Code</th>
                   <th className="p-2.5">Category</th>
-                  <th className="p-2.5 text-left w-2/5">Indicator Metric Name</th>
+                  <th className="p-2.5 text-left w-1/3">Indicator Metric Name</th>
                   <th className="p-2.5 text-center">Unit</th>
-                  <th className="p-2.5 text-right">Baseline (2015)</th>
-                  <th className="p-2.5 text-right">Target (2016)</th>
-                  <th className="p-2.5 text-right">Consolidated Achievement</th>
+                  <th className="p-2.5 text-right font-mono text-[9px] uppercase text-slate-500">Base (2017)</th>
+                  <th className="p-2.5 text-right font-mono text-[9px] uppercase text-slate-500">Plan (2018)</th>
+                  <th className="p-2.5 text-right font-mono text-[9px] uppercase text-slate-500">Perf (2018)</th>
+                  <th className="p-2.5 text-right font-mono text-[9px] uppercase text-slate-500">Plan (2019)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {indicators.map((ind) => {
-                  const reports = monthlyData.filter(e => e.code === ind.code && e.actual !== null);
-                  const actualSum = reports.reduce((acc, curr) => acc + (curr.actual || 0), 0);
-                  const avgActual = reports.length > 0 ? Math.round(actualSum / reports.length) : null;
-
                   return (
-                    <tr key={ind.code} className="hover:bg-slate-55 transition-colors">
+                    <tr key={ind.code} className="hover:bg-slate-50 transition-colors">
                       <td className="p-2.5 font-mono text-[10px] font-bold text-slate-800">{ind.code}</td>
                       <td className="p-2.5 font-mono text-[10px] uppercase text-slate-500">{ind.category}</td>
                       <td className="p-2.5">
@@ -393,11 +431,10 @@ export default function App() {
                         <div className="text-[9px] text-slate-400 font-medium">Department: {ind.department}</div>
                       </td>
                       <td className="p-2.5 text-center font-medium">{ind.unit}</td>
-                      <td className="p-2.5 text-right font-mono">{ind.baseline2015}</td>
-                      <td className="p-2.5 text-right font-mono font-bold">{ind.target2016}</td>
-                      <td className="p-2.5 text-right font-mono font-extrabold text-indigo-900">
-                        {avgActual !== null ? `${avgActual} ${ind.unit}` : "Unreported"}
-                      </td>
+                      <td className="p-2.5 text-right font-mono">{ind.perf2017}</td>
+                      <td className="p-2.5 text-right font-mono font-bold">{ind.plan2018}</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-emerald-700">{ind.perf2018}</td>
+                      <td className="p-2.5 text-right font-mono font-extrabold text-indigo-900">{ind.plan2019}</td>
                     </tr>
                   );
                 })}

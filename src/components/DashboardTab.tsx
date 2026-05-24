@@ -17,6 +17,7 @@ export default function DashboardTab({ indicators, monthlyData, profile }: Dashb
   const [selectedTimeframe, setSelectedTimeframe] = useState<"monthly" | "quarterly" | "annual">("quarterly");
   const [timeframeRef, setTimeframeRef] = useState<string>("Q1"); // Q1, Q2, Q3, Q4, or Hamle, Nehase, etc.
   const [selectedDept, setSelectedDept] = useState("All");
+  const [selectedIndicatorCode, setSelectedIndicatorCode] = useState("All");
 
   // Filter Ethiopian months based on selected timeframe & reference
   const activeMonths = useMemo(() => {
@@ -49,7 +50,7 @@ export default function DashboardTab({ indicators, monthlyData, profile }: Dashb
     if (selectedTimeframe === "monthly") {
       return ETHIOPIAN_MONTHS.map(m => ({ value: m, label: m }));
     }
-    return [{ value: "Annual", label: "EFY 2016 Entire Year" }];
+    return [{ value: "Annual", label: "EFY 2018 Entire Year" }];
   }, [selectedTimeframe]);
 
   // Automatically adjust default reference when selectedTimeframe changes
@@ -64,11 +65,14 @@ export default function DashboardTab({ indicators, monthlyData, profile }: Dashb
     }
   };
 
-  // Filtered indicators based on department selection
+  // Filtered indicators based on department and indicator selection
   const deptIndicators = useMemo(() => {
-    if (selectedDept === "All") return indicators;
-    return indicators.filter(ind => ind.department === selectedDept);
-  }, [indicators, selectedDept]);
+    return indicators.filter(ind => {
+      const matchesDept = selectedDept === "All" || ind.department === selectedDept;
+      const matchesIndicator = selectedIndicatorCode === "All" || ind.code === selectedIndicatorCode;
+      return matchesDept && matchesIndicator;
+    });
+  }, [indicators, selectedDept, selectedIndicatorCode]);
 
   // Performance calculations for each indicator in active timeframe
   const indicatorsStatus = useMemo(() => {
@@ -98,7 +102,7 @@ export default function DashboardTab({ indicators, monthlyData, profile }: Dashb
         if (actVal !== null) {
           reportedCount++;
           actualSum += actVal;
-          targetSum += ind.target2016;
+          targetSum += (ind.plan2018 / 12);
         }
       });
 
@@ -178,8 +182,8 @@ export default function DashboardTab({ indicators, monthlyData, profile }: Dashb
 
       activeEntries.forEach((entry) => {
         const ind = indicators.find(i => i.code === entry.code);
-        if (ind && entry.actual !== null && ind.target2016 > 0) {
-          totalPrc += (entry.actual / ind.target2016) * 100;
+        if (ind && entry.actual !== null && ind.plan2018 > 0) {
+          totalPrc += (entry.actual / (ind.plan2018 / 12)) * 100;
           count++;
         }
       });
@@ -250,13 +254,32 @@ export default function DashboardTab({ indicators, monthlyData, profile }: Dashb
           {/* Department Filter */}
           <select
             value={selectedDept}
-            onChange={(e) => setSelectedDept(e.target.value)}
+            onChange={(e) => {
+              setSelectedDept(e.target.value);
+              setSelectedIndicatorCode("All");
+            }}
             className="h-9 px-3 border border-slate-700 rounded-lg text-xs bg-slate-800 text-white font-bold cursor-pointer focus:ring-1 focus:ring-indigo-500"
           >
             <option value="All" className="text-slate-900 bg-white">All Departments</option>
             {DEPARTMENTS.map(d => (
               <option key={d} value={d} className="text-slate-900 bg-white">{d}</option>
             ))}
+          </select>
+
+          {/* Indicator Focus selector */}
+          <select
+            value={selectedIndicatorCode}
+            onChange={(e) => setSelectedIndicatorCode(e.target.value)}
+            className="h-9 px-3 border border-slate-705 rounded-lg text-xs bg-slate-800 text-white font-bold cursor-pointer focus:ring-1 focus:ring-indigo-505 max-w-[210px]"
+          >
+            <option value="All" className="text-slate-900 bg-white">All Indicators</option>
+            {indicators
+              .filter(i => selectedDept === "All" || i.department === selectedDept)
+              .map(i => (
+                <option key={i.code} value={i.code} className="text-slate-900 bg-white">
+                  [{i.code}] {i.name.length > 25 ? `${i.name.slice(0, 25)}...` : i.name}
+                </option>
+              ))}
           </select>
 
         </div>
